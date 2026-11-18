@@ -4,6 +4,39 @@ import { arrayMove } from '@dnd-kit/sortable';
 
 const DEFAULT_TAG = { id: 'popular', label: '热门', value: '热门' };
 
+// Small built-in fallback shown when the Douban tags API is slow or
+// down. These are the standard Douban search tags, so they work as-is
+// as `tag` values for /api/douban/recommend. The page must never sit
+// on an empty tag row waiting for a network call that may never return.
+const FALLBACK_TAGS = [
+    DEFAULT_TAG,
+    { id: 'tag_最新', label: '最新', value: '最新' },
+    { id: 'tag_豆瓣高分', label: '豆瓣高分', value: '豆瓣高分' },
+    { id: 'tag_经典', label: '经典', value: '经典' },
+    { id: 'tag_华语', label: '华语', value: '华语' },
+    { id: 'tag_欧美', label: '欧美', value: '欧美' },
+];
+
+// Homepage fetches must never hang forever: the Douban API is slow /
+// rate-limited from some networks, and a plain fetch() has no timeout
+// (a stalled connection can hang for minutes). 5s is enough for a
+// healthy tags call; after that we fall back and clear the spinner.
+const TAGS_FETCH_TIMEOUT_MS = 5000;
+
+async function fetchTagsWithTimeout(contentType: 'movie' | 'tv') {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TAGS_FETCH_TIMEOUT_MS);
+    try {
+        const response = await fetch(`/api/douban/tags?type=${contentType}`, {
+            signal: controller.signal,
+        });
+        const data = await response.json();
+        return data;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 const STORAGE_KEY_PREFIX = 'kvideo_custom_tags_';
 
 export function useTagManager() {
@@ -13,7 +46,9 @@ export function useTagManager() {
         return saved === 'tv' ? 'tv' : 'movie';
     });
     const [selectedTag, setSelectedTag] = useState(DEFAULT_TAG.value);
-    const [tags, setTags] = useState<any[]>([]);
+    // Start with the fallback list so the tag row renders immediately;
+    // the live Douban list replaces it when (and if) it arrives.
+    const [tags, setTags] = useState<any[]>(FALLBACK_TAGS);
     const [isLoadingTags, setIsLoadingTags] = useState(false);
     const [newTagInput, setNewTagInput] = useState('');
     const [showTagManager, setShowTagManager] = useState(false);
@@ -39,12 +74,13 @@ export function useTagManager() {
                 }
             }
 
-            // If no saved tags, fetch from Douban
+            // If no saved tags, fetch from Douban (with a hard timeout:
+            // without one, a stalled Douban call left the homepage on
+            // "正在加载标签..." forever and the grid never rendered).
             setIsLoadingTags(true);
             try {
-                const response = await fetch(`/api/douban/tags?type=${contentType}`);
-                const data = await response.json();
-                if (data.tags && Array.isArray(data.tags)) {
+                const data = await fetchTagsWithTimeout(contentType);
+                if (data.tags && Array.isArray(data.tags) && data.tags.length > 0) {
                     const mappedTags = data.tags.map((label: string) => ({
                         id: label === '热门' ? 'popular' : `tag_${label}`,
                         label,
@@ -60,11 +96,13 @@ export function useTagManager() {
                     // Also save to localStorage to avoid repeated fetches if desired
                     // Actually, let's just keep them in memory for now unless they customize
                 } else {
-                    setTags([DEFAULT_TAG]);
+                    // Empty list (e.g. API 500 with { tags: [] }): keep the
+                    // fallback instead of an empty tag row.
+                    setTags(FALLBACK_TAGS);
                 }
             } catch (error) {
                 console.error('Fetch tags error:', error);
-                setTags([DEFAULT_TAG]);
+                setTags(FALLBACK_TAGS);
             } finally {
                 setIsLoadingTags(false);
             }
@@ -100,12 +138,11 @@ export function useTagManager() {
 
     const handleRestoreDefaults = async () => {
         localStorage.removeItem(storageKey);
-        // Refresh by re-fetching
+        // Refresh by re-fetching (same 5s timeout as the initial load)
         setIsLoadingTags(true);
         try {
-            const response = await fetch(`/api/douban/tags?type=${contentType}`);
-            const data = await response.json();
-            if (data.tags && Array.isArray(data.tags)) {
+            const data = await fetchTagsWithTimeout(contentType);
+            if (data.tags && Array.isArray(data.tags) && data.tags.length > 0) {
                 const mappedTags = data.tags.map((label: string) => ({
                     id: label === '热门' ? 'popular' : `tag_${label}`,
                     label,
@@ -116,10 +153,10 @@ export function useTagManager() {
                 }
                 setTags(mappedTags);
             } else {
-                setTags([DEFAULT_TAG]);
+                setTags(FALLBACK_TAGS);
             }
         } catch (error) {
-            setTags([DEFAULT_TAG]);
+            setTags(FALLBACK_TAGS);
         } finally {
             setIsLoadingTags(false);
         }

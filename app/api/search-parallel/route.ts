@@ -11,6 +11,17 @@ import { getSourceName } from '@/lib/utils/source-names';
 
 export const runtime = 'edge';
 
+// Stability: a single search must never be held hostage by the slowest
+// source. 20s is the global deadline for the whole parallel search
+// (per-source attempts are already capped in lib/api/http-utils.ts).
+// After the deadline, in-flight source searches are abandoned and the
+// stream completes with whatever arrived plus a per-source failure list.
+const SEARCH_DEADLINE_MS = 20000;
+// Auto-fetch at most 2 extra pages per source (pages 2-3). Previously
+// every remaining page was fetched in parallel with no cap, so a source
+// reporting pagecount=100 would fan out 99 concurrent requests.
+const MAX_EXTRA_PAGES_PER_SOURCE = 2;
+
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
 
@@ -56,11 +67,17 @@ export async function POST(request: NextRequest) {
         let completedSources = 0;
         let totalVideosFound = 0;
         let maxPageCount = 1;
+        // Sources that failed, surfaced in the final `complete` event so
+        // the UI can show per-source status instead of a whole-page failure.
+        const failedSources: Array<{ source: string; latency: number; error: string }> = [];
+        const searchDeadline = Date.now() + SEARCH_DEADLINE_MS;
+        const deadlineExceeded = () => Date.now() > searchDeadline;
 
         // Search all sources in PARALLEL - don't wait for all to finish
         const searchPromises = sources.map(async (source: any) => {
           const startTime = performance.now(); // Track start time
           try {
+            if (deadlineExceeded()) throw new Error('Search deadline exceeded');
 
             // Search page 1 for this source
             const result = await searchVideos(query.trim(), [source], 1);
@@ -96,9 +113,12 @@ export async function POST(request: NextRequest) {
               totalVideosFound
             })}\n\n`));
 
-            // Auto-fetch remaining pages if pagecount > 1
-            if (pagecount > 1) {
-              const remainingPages = Array.from({ length: pagecount - 1 }, (_, i) => i + 2);
+            // Auto-fetch remaining pages if pagecount > 1 (capped, see above)
+            if (pagecount > 1 && !deadlineExceeded()) {
+              const remainingPages = Array.from(
+                { length: Math.min(pagecount - 1, MAX_EXTRA_PAGES_PER_SOURCE) },
+                (_, i) => i + 2
+              );
               const pagePromises = remainingPages.map(async (pg) => {
                 try {
                   const pageResult = await searchVideos(query.trim(), [source], pg);
@@ -143,6 +163,21 @@ export async function POST(request: NextRequest) {
             // Log error but continue with other sources
             console.error(`[Search Parallel] Source ${source.id} failed after ${latency}ms:`, error);
             completedSources++;
+            failedSources.push({
+              source: source.id,
+              latency,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+
+            // Per-source failure event: the client can surface this as
+            // "source X failed / skipped" instead of failing the search.
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'source_failed',
+              source: source.id,
+              latency,
+              completedSources,
+              totalSources: sources.length,
+            })}\n\n`));
 
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'progress',
@@ -163,7 +198,8 @@ export async function POST(request: NextRequest) {
           type: 'complete',
           totalVideosFound,
           totalSources: sources.length,
-          maxPageCount
+          maxPageCount,
+          failedSources,
         })}\n\n`));
 
         controller.close();

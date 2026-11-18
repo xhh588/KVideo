@@ -19,7 +19,10 @@ interface UseLatencyPingOptions {
 export function useLatencyPing({
     sourceUrls,
     enabled = true,
-    intervalMs = 5000,
+    // 30s, up from 5s: pinging every source every 5s kept the radio
+    // awake and fired a full round of /api/ping requests on every
+    // mobile screen. Latency badges do not need 5s freshness.
+    intervalMs = 30000,
 }: UseLatencyPingOptions) {
     const [latencies, setLatencies] = useState<LatencyState>({});
     const [isLoading, setIsLoading] = useState(false);
@@ -70,15 +73,27 @@ export function useLatencyPing({
 
     const pingAllSources = useCallback(async () => {
         if (!mountedRef.current || stableSourceUrls.length === 0) return;
+        // Do not ping while the tab is hidden (Fold7 background / screen
+        // off): the results are invisible and the radio stays awake.
+        if (typeof document !== 'undefined' && document.hidden) return;
 
         setIsLoading(true);
 
-        const results = await Promise.all(
-            stableSourceUrls.map(async ({ id, baseUrl }) => {
-                const latency = await pingSource(id, baseUrl);
-                return { id, latency };
-            })
-        );
+        // Batch pings 3 at a time instead of firing all sources at
+        // once; with 20+ sources the old Promise.all burst could
+        // saturate a mobile connection and time out most of them.
+        const results: Array<{ id: string; latency: number | null }> = [];
+        for (let i = 0; i < stableSourceUrls.length; i += 3) {
+            if (!mountedRef.current) break;
+            const batch = stableSourceUrls.slice(i, i + 3);
+            const batchResults = await Promise.all(
+                batch.map(async ({ id, baseUrl }) => {
+                    const latency = await pingSource(id, baseUrl);
+                    return { id, latency };
+                })
+            );
+            results.push(...batchResults);
+        }
 
         if (mountedRef.current) {
             setLatencies(prev => {

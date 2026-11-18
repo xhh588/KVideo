@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         try {
             // Use HEAD request for faster ping (less data transfer)
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout (was 5s)
 
             await fetch(url, {
                 method: 'HEAD',
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
         } catch (fetchError) {
             // If HEAD fails, try GET with timeout
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
 
             try {
                 await fetch(url, {

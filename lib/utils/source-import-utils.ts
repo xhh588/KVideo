@@ -109,11 +109,27 @@ export async function fetchSourcesFromUrl(url: string): Promise<ImportResult> {
         ? `/api/proxy?url=${encodeURIComponent(url)}`
         : url;
 
-    const response = await fetch(fetchUrl, {
-        headers: {
-            'Accept': 'application/json',
-        },
-    });
+    // Subscription sync previously had no timeout at all: one hung
+    // subscription URL blocked Promise.allSettled in useSubscriptionSync
+    // indefinitely on app start. 10s is ample for a JSON config.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+        response = await fetch(fetchUrl, {
+            headers: {
+                'Accept': 'application/json',
+            },
+            signal: controller.signal,
+        });
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error(`获取超时（10s）: ${url}`);
+        }
+        throw error;
+    }
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
         throw new Error(`获取失败: ${response.status} ${response.statusText}`);

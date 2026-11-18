@@ -11,6 +11,14 @@ interface DoubanMovie {
 
 const PAGE_LIMIT = 20;
 
+// Same problem as the tags fetch: a plain fetch() to /api/douban/recommend
+// has no timeout, so a stalled Douban call left the homepage grid on
+// "加载中..." forever (loading only clears when the fetch settles).
+// 8s is enough for a healthy 20-poster page; on timeout the grid shows
+// "暂无内容" instead of spinning forever, and the user can retry by
+// switching tags.
+const RECOMMEND_FETCH_TIMEOUT_MS = 8000;
+
 export function usePopularMovies(selectedTag: string, tags: any[], contentType: 'movie' | 'tv' = 'movie') {
     const [movies, setMovies] = useState<DoubanMovie[]>([]);
     const [loading, setLoading] = useState(false);
@@ -21,10 +29,13 @@ export function usePopularMovies(selectedTag: string, tags: any[], contentType: 
         if (loading) return;
 
         setLoading(true);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), RECOMMEND_FETCH_TIMEOUT_MS);
         try {
             const tagValue = tags.find(t => t.id === tag)?.value || '热门';
             const response = await fetch(
-                `/api/douban/recommend?type=${contentType}&tag=${encodeURIComponent(tagValue)}&page_limit=${PAGE_LIMIT}&page_start=${pageStart}`
+                `/api/douban/recommend?type=${contentType}&tag=${encodeURIComponent(tagValue)}&page_limit=${PAGE_LIMIT}&page_start=${pageStart}`,
+                { signal: controller.signal }
             );
 
             if (!response.ok) throw new Error('Failed to fetch');
@@ -38,6 +49,7 @@ export function usePopularMovies(selectedTag: string, tags: any[], contentType: 
             console.error('Failed to load movies:', error);
             setHasMore(false);
         } finally {
+            clearTimeout(timer);
             setLoading(false);
         }
     }, [loading, tags, contentType]);

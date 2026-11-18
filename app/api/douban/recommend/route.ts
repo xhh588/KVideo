@@ -17,6 +17,10 @@ export async function GET(request: Request) {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
         'Referer': 'https://movie.douban.com/',
       },
+      // Fail fast: same hang as the tags route — without a timeout a
+      // stalled Douban call left the homepage grid on "加载中..."
+      // forever. The client gives up after 8s, so 8s here is enough.
+      signal: AbortSignal.timeout(8000),
       next: { revalidate: 3600 }, // Cache for 1 hour
     });
 

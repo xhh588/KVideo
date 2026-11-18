@@ -105,6 +105,12 @@ export function useSearchAction({ state, onCacheUpdate, onUrlUpdate }: UseSearch
                 onPageInfo: (pageCount) => {
                     setMaxPageCount((prev) => Math.max(prev, pageCount));
                 },
+                onSourceFailed: (sourceId, latency) => {
+                    // Single source died; search continues with the rest.
+                    // Logged here so a failing source is visible instead
+                    // of silently counting as "completed" in progress.
+                    console.warn(`[Search] Source ${sourceId} failed after ${latency}ms, skipped`);
+                },
                 onComplete: () => {
                     setLoading(false);
 

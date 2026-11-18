@@ -8,7 +8,10 @@ interface SearchCache {
 }
 
 const CACHE_KEY = 'kvideo_search_cache';
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+// 30 minutes, down from 24 hours: video sources change fast and a
+// day-old result list is mostly dead links on mobile. Repeat searches
+// within 30 minutes still hit the cache and skip the network entirely.
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
 const MAX_CACHED_RESULTS = 300;
 

@@ -60,7 +60,7 @@ export function PremiumContentGrid({
                                         fill
                                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
                                         className="object-cover transition-transform duration-300 group-hover:scale-105 rounded-[var(--radius-2xl)]"
-                                        loading="eager"
+                                        loading="lazy" /* perf-lite: posters below the fold must not all fetch eagerly on mobile */
                                         unoptimized
                                     />
                                 ) : (

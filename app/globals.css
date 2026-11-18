@@ -7,6 +7,10 @@
 @import './styles/glass.css';
 @import "./styles/video-player.css";
 @import "./styles/search-history.css";
+/* Perf-lite: mobile / reduced-motion downgrades. Imported last so its
+   media-query overrides win over the glass styles above. Desktop is
+   unaffected (gated by pointer: coarse / max-width / reduced-motion). */
+@import "./styles/perf-lite.css";
 @keyframes jiggle {
   0% { transform: rotate(-1deg); }
   50% { transform: rotate(1deg); }

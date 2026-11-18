@@ -68,7 +68,7 @@ export const VideoCard = memo<VideoCardProps>(({
                                 fill
                                 className="object-cover rounded-[var(--radius-2xl)]"
                                 sizes="(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 16vw"
-                                loading="eager"
+                                loading="lazy" /* perf-lite: posters below the fold must not all fetch eagerly on mobile */
                                 unoptimized
                                 referrerPolicy="no-referrer"
                                 onError={(e) => {

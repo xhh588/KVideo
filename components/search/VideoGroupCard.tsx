@@ -110,7 +110,7 @@ export const VideoGroupCard = memo<VideoGroupCardProps>(({
                                 fill
                                 className="object-cover rounded-[var(--radius-2xl)]"
                                 sizes="(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 16vw"
-                                loading="eager"
+                                loading="lazy" /* perf-lite: see VideoCard */
                                 unoptimized
                                 referrerPolicy="no-referrer"
                                 onError={(e) => {

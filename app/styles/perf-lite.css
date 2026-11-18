@@ -1,0 +1,121 @@
+/**
+ * perf-lite.css — Mobile / Fold7 performance reductions (2026-11-19)
+ *
+ * Purpose: downgrade the expensive "Liquid Glass" effects only where they
+ * hurt most — touch devices (coarse pointers, incl. Galaxy Z Fold7 outer
+ * + inner screens) and small screens — and honour prefers-reduced-motion
+ * everywhere. Desktop (fine pointer, large screen) is untouched.
+ *
+ * Strategy (reversible, single file):
+ *  - All overrides live here, gated by media queries. No Tailwind classes
+ *    were edited in TSX, so removing this import restores the old look.
+ *  - backdrop-filter is the big one: on mobile GPUs every blurred surface
+ *    forces a full-screen backdrop readback. We drop it and compensate with
+ *    more-opaque solid backgrounds so contrast stays readable.
+ *  - Only transform / opacity animations are kept cheap; layout-animating
+ *    properties (width / height) and long `transition: all` are shortened.
+ *  - Loading spinners (animate-spin / animate-pulse) are deliberately
+ *    KEPT in the coarse-pointer block — a frozen spinner looks broken.
+ *    Only decorative, infinite or entrance animations are disabled there.
+ *    In the prefers-reduced-motion block the standard near-zero-duration
+ *    pattern applies to everything, including spinners, as the user asked
+ *    for no motion.
+ */
+
+/* ------------------------------------------------------------------ */
+/* 1. Coarse pointers / small screens: drop glass blur + heavy shadow */
+/* ------------------------------------------------------------------ */
+@media (pointer: coarse), (max-width: 768px) {
+  /* The single most expensive effect on mobile: backdrop blur.
+     Covers Tailwind backdrop-blur-* utilities, the inline
+     [-webkit-backdrop-filter:blur(25px)] on ThemeSwitcher, and the
+     blur(25px) saturate(180%) / blur(10px) rules in video-player.css. */
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Compensate: player glass surfaces were rgba(28,28,30,0.75) + blur,
+     which would go nearly transparent without the blur. Make them
+     near-solid so text/controls stay legible over video. */
+  .player-controls-glass,
+  .player-toast,
+  .player-error-glass,
+  .player-menu-glass {
+    background: rgba(28, 28, 30, 0.94) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  .btn-glass,
+  .loading-overlay-glass,
+  .badge-proxy,
+  .badge-direct,
+  .skip-indicator-glass {
+    background: rgba(0, 0, 0, 0.55) !important;
+    box-shadow: none !important;
+  }
+
+  /* Generic glass surfaces (navbar, modals, tags, PasswordGate card):
+     their --glass-bg is already 0.90–0.95 opaque, so dropping the blur
+     alone is enough; just flatten the shadow a little. */
+  :root {
+    --shadow-sm: 0 1px 2px var(--shadow-color);
+    --shadow-md: 0 2px 6px var(--shadow-color);
+  }
+
+  /* Don't pay for a GPU layer per card / image on long grids. */
+  .glass-card {
+    will-change: auto !important;
+  }
+
+  img {
+    transform: none !important;
+  }
+
+  /* Shorten long `transition: all 0.4s cubic-bezier(...)` rules (player
+     controls, modals, PasswordGate). transform/opacity-only transitions
+     are unaffected in practice; `all` also animates background/shadow. */
+  .player-controls-glass,
+  .btn-glass,
+  .player-toast,
+  .player-menu-glass {
+    transition-duration: 0.15s !important;
+  }
+
+  /* Disable decorative / entrance animations on touch devices.
+     Spinners and pulse indicators are intentionally NOT in this list. */
+  .animate-jiggle,
+  .animate-fade-in,
+  [class*="grid"] > a {
+    animation: none !important;
+  }
+
+  /* The progress bar animates `height` (a layout property) on hover;
+     hover rarely fires on touch, but keep the cost out regardless. */
+  .progress-bar-glass {
+    transition: none !important;
+  }
+  .progress-bar-glass:hover {
+    height: 8px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. prefers-reduced-motion: honour it globally (all devices)        */
+/*    Standard pattern: near-zero durations, single iteration.        */
+/*    No `prefers-reduced-motion` rule existed in the codebase before  */
+/*    this file (only an inverted no-preference rule in               */
+/*    scroll-optimization.css, which is left untouched).               */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
